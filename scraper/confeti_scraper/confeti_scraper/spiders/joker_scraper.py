@@ -7,9 +7,7 @@ from scrapy.http import Request
 class Joker2019Spider(scrapy.Spider):
     name = 'joker2019_scraper'
     allowed_domains = ['jokerconf.com']
-    start_urls = ['https://2019.jokerconf.com/en']
-
-    
+    start_urls = ['https://2019.jokerconf.com/en']    
 
     def __init__(self):
         self.COMPLEXITY_VALUES ={
@@ -21,24 +19,13 @@ class Joker2019Spider(scrapy.Spider):
         self.report_dict = {}
         self.next_page = ''
 
-    def materials_dict_form(self, material_link):
-        if 'youtu' in material_link:
-            return {'video':material_link}
-        elif 'github' in material_link:
-            return {'repo':material_link}
-        elif 'ctfassets' in material_link:
-            return {'presentation':''.join(('https:',material_link))}
-        else:
-            return {'article':''.join(('https://2019.jokerconf.com',material_link,'/'))}
-
-
     def parse(self, response):
         date_and_location = [i.strip() for i in response.xpath('//span[@class="hero__info "]/text()').getall()]
         self.conference['year'] = date_and_location[0]
         self.conference['location'] = date_and_location[1]
         self.conference['logo'] = ''.join((response.url,response.xpath('//a[@class="header__logo"]//img/@src').get()))
         self.conference['url'] = response.url
-        self.conference['name'] = 'Joker 2019'
+        self.conference['name'] = 'Joker'
         self.next_page=''.join((response.url,'/schedule/'))
         return Request(self.next_page, callback=self.parse_reports)
 
@@ -51,10 +38,7 @@ class Joker2019Spider(scrapy.Spider):
                 if ('bof' in report_link) or ('party' in report_link):
                     continue
                 complexity_text = frame.xpath('.//div[@class="schedule__helper"]//img/@title').get()
-                report_dict['complexity'] = {'value':self.COMPLEXITY_VALUES[complexity_text], 'name':complexity_text}
-                for material_link in frame.xpath('.//a/@href').getall():
-                    material_links.append(self.materials_dict_form(material_link))
-                report_dict['source'] = material_links
+                report_dict['complexity'] = {'value':self.COMPLEXITY_VALUES[complexity_text], 'description':complexity_text}
                 report_dict['tags'] = [tag.strip()[1::] for tag in frame.xpath('.//i[@class="schedule__tags"]//nobr/text()').getall()]
                 report_dict['language'] = frame.xpath('.//span[@class="schedule__talk-lang "]/text()').get().strip()
                 yield Request(
@@ -68,9 +52,11 @@ class Joker2019Spider(scrapy.Spider):
 
     def parse_authors(self, response):
         report = Reports()
-        report['complexity'] = response.meta['report_dict']['complexity']
+        try:
+            report['complexity'] = response.meta['report_dict']['complexity']
+        except KeyError:
+            pass
         report['language'] = response.meta['report_dict']['language']
-        report['source'] = response.meta['report_dict']['source']
         report['tags'] = response.meta['report_dict']['tags']
         report['title'] = response.xpath('//h1[@class="talk_title"]/text()').get()
         report['description'] = response.xpath('//main[@class="talk-main"]//p/text()').get()
@@ -79,10 +65,13 @@ class Joker2019Spider(scrapy.Spider):
             speaker = Speakers()
             contact_info = ContactInfo()
             speaker['name'] = speaker_sec.xpath('.//h5[@class="speaker-info_name"]/text()').get().strip()
-            speaker['avatar'] = speaker_sec.xpath('.//img[@class="img-fluid"]/@src').get()
-            speaker['bio'] = speaker_sec.xpath('.//div[@class="speaker-info_bio"]//p/text()').get().strip()
-            contact_info['company'] = (speaker_sec.xpath('.//h6[@class="speaker-info_company"]/text()').get(),str(*re.findall(r'\d\d\d\d',self.conference['name'])))
-            contact_info['twitterUsername'] =  speaker_sec.xpath('.//div[@class="speaker_profiles"]//a[@class="twitter_link"]/@href').get()
+            speaker['avatar'] = ''.join(('https:',speaker_sec.xpath('.//img[@class="img-fluid"]/@src').get()))
+            company_name = speaker_sec.xpath('.//h6[@class="speaker-info_company"]/text()').get()
+            if company_name is not None:
+                contact_info['company'] = {'name':company_name,'year':2019}
+            twitter_name = speaker_sec.xpath('.//div[@class="speaker_profiles"]//a[@class="twitter_link"]/@href').get()
+            if twitter_name is not None:
+                contact_info['twitterUsername'] = twitter_name
             speaker['contactInfo']=contact_info
             speakers_list.append(speaker)
         report['speakers'] = speakers_list
